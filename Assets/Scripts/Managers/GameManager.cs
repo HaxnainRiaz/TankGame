@@ -4,6 +4,8 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 
+public enum GameState { Starting, Playing, Paused, RoundEnding, MatchEnding }
+
 public class GameManager : MonoBehaviour
 {
     [Header("Game Settings")]
@@ -14,19 +16,19 @@ public class GameManager : MonoBehaviour
 
     [Header("References")]
     public CameraControl m_CameraControl;
-    public Text m_MessageText;
     public GameObject m_TankPrefab;
     public TankManager[] m_Tanks;
 
     private List<TankManager> m_AllTanks = new List<TankManager>();
-    private TankManager m_PlayerTank;
-
     private int m_CurrentScore;
     private int m_RoundNumber;
     private WaitForSeconds m_StartWait;
     private WaitForSeconds m_EndWait;
     private TankManager m_RoundWinner;
     private TankManager m_GameWinner;
+
+    public GameState m_State { get; private set; }
+    private GameState m_LastState;
 
     public static GameManager Instance { get; private set; }
 
@@ -39,53 +41,125 @@ public class GameManager : MonoBehaviour
 
     private void Start()
     {
-        // Validate references
-        if (m_TankPrefab == null) Debug.LogError("Tank prefab is missing!");
-        if (m_CameraControl == null) Debug.LogError("CameraControl is missing!");
-        if (m_MessageText == null) Debug.LogError("MessageText is missing!");
-
-        // Initialize tanks
         SpawnAllTanks();
-        if (GameModeManager.Instance != null &&
-            GameModeManager.Instance.Mode == GameMode.SinglePlayerAI &&
-            m_Tanks.Length > 0)
+        SetCameraTargets();
+        StartCoroutine(GameLoop());
+    }
+
+    private void Update()
+    {
+        if (Input.GetKeyDown(KeyCode.Escape))
         {
-            m_PlayerTank = m_Tanks[0];
+            TogglePause();
+        }
+    }
+
+    public void TogglePause()
+    {
+        if (m_State == GameState.Paused)
+        {
+            m_State = m_LastState;
+            Time.timeScale = 1f;
+            UIManager.Instance.TogglePause(false);
+            if (m_State == GameState.Playing) EnableTankControl();
+        }
+        else if (m_State == GameState.Playing || m_State == GameState.Starting)
+        {
+            m_LastState = m_State;
+            m_State = GameState.Paused;
+            Time.timeScale = 0f;
+            DisableTankControl();
+            UIManager.Instance.TogglePause(true);
+        }
+    }
+
+    private IEnumerator GameLoop()
+    {
+        while (m_GameWinner == null)
+        {
+            yield return StartCoroutine(RoundStarting());
+            yield return StartCoroutine(RoundPlaying());
+            yield return StartCoroutine(RoundEnding());
         }
 
-        SetCameraTargets();
+        // Match ended
+        m_State = GameState.MatchEnding;
+        UIManager.Instance.ShowPanel(UIManager.Instance.m_MatchEndPanel);
+    }
 
-        // Start main game loop
-        StartCoroutine(GameLoop());
+    private IEnumerator RoundStarting()
+    {
+        m_State = GameState.Starting;
+        ResetAllTanks();
+        DisableTankControl();
+        m_RoundNumber++;
+
+        if (m_CameraControl != null) m_CameraControl.SetStartPositionAndSize();
+        
+        // Show Round Start UI
+        UIManager.Instance.SetMessage($"ROUND {m_RoundNumber}");
+
+        yield return m_StartWait;
+    }
+
+    private IEnumerator RoundPlaying()
+    {
+        m_State = GameState.Playing;
+        EnableTankControl();
+        
+        UIManager.Instance.SetMessage("");
+
+        // Wait until goal met or players dead
+        bool isAIGame = GameModeManager.Instance != null && 
+                       (GameModeManager.Instance.Mode == GameMode.SinglePlayerAI || 
+                        GameModeManager.Instance.Mode == GameMode.CoopAI);
+
+        while (true)
+        {
+            if (m_State == GameState.Paused)
+            {
+                yield return null;
+                continue;
+            }
+
+            if (isAIGame)
+            {
+                if (AreAllPlayersDead()) break;
+                if (m_CurrentScore >= m_TargetScore) break;
+            }
+            else
+            {
+                if (OneTankLeft()) break;
+            }
+
+            yield return null;
+        }
+    }
+
+    private IEnumerator RoundEnding()
+    {
+        m_State = GameState.RoundEnding;
+        DisableTankControl();
+
+        m_RoundWinner = GetRoundWinner();
+        if (m_RoundWinner != null) m_RoundWinner.m_Wins++;
+
+        m_GameWinner = GetGameWinner();
+        UIManager.Instance.SetMessage(EndMessage());
+
+        yield return m_EndWait;
     }
 
     private void SpawnAllTanks()
     {
-        if (m_Tanks == null || m_Tanks.Length == 0)
-        {
-            Debug.LogError("No tanks assigned in GameManager!");
-            return;
-        }
-
         m_AllTanks.Clear();
-
         for (int i = 0; i < m_Tanks.Length; i++)
         {
-            if (GameModeManager.Instance != null &&
-                GameModeManager.Instance.Mode == GameMode.SinglePlayerAI &&
-                i == 1) // Skip player 2 in single-player mode
+            // Logic for skipping player 2 in Single Player
+            if (GameModeManager.Instance != null && GameModeManager.Instance.Mode == GameMode.SinglePlayerAI && i == 1)
                 continue;
 
-            if (m_TankPrefab == null || m_Tanks[i].m_SpawnPoint == null)
-            {
-                Debug.LogError($"Tank prefab or spawn point missing for tank {i}");
-                continue;
-            }
-
-            m_Tanks[i].m_Instance = Instantiate(m_TankPrefab,
-                m_Tanks[i].m_SpawnPoint.position,
-                m_Tanks[i].m_SpawnPoint.rotation);
-
+            m_Tanks[i].m_Instance = Instantiate(m_TankPrefab, m_Tanks[i].m_SpawnPoint.position, m_Tanks[i].m_SpawnPoint.rotation);
             m_Tanks[i].m_PlayerNumber = i + 1;
             m_Tanks[i].Setup();
             m_AllTanks.Add(m_Tanks[i]);
@@ -94,178 +168,66 @@ public class GameManager : MonoBehaviour
 
     private void SetCameraTargets()
     {
-        if (m_CameraControl == null) return;
-
         Transform[] targets = new Transform[m_AllTanks.Count];
         for (int i = 0; i < m_AllTanks.Count; i++)
-        {
-            if (m_AllTanks[i].m_Instance != null)
-                targets[i] = m_AllTanks[i].m_Instance.transform;
-        }
-
+            targets[i] = m_AllTanks[i].m_Instance.transform;
         m_CameraControl.m_Targets = targets;
-    }
-
-    private IEnumerator GameLoop()
-    {
-        while (true)
-        {
-            yield return StartCoroutine(RoundStarting());
-            yield return StartCoroutine(RoundPlaying());
-            yield return StartCoroutine(RoundEnding());
-
-            if (m_GameWinner != null)
-            {
-                // Restart scene safely
-                SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-                yield break;
-            }
-        }
-    }
-
-    private IEnumerator RoundStarting()
-    {
-        ResetAllTanks();
-        DisableTankControl();
-        m_CurrentScore = 0;
-        m_RoundNumber++;
-
-        if (m_CameraControl != null) m_CameraControl.SetStartPositionAndSize();
-        if (m_MessageText != null) m_MessageText.text = $"ROUND {m_RoundNumber}";
-
-        yield return m_StartWait;
-    }
-
-    private IEnumerator RoundPlaying()
-    {
-        EnableTankControl();
-        if (m_MessageText != null) m_MessageText.text = "";
-
-        if (GameModeManager.Instance != null &&
-            (GameModeManager.Instance.Mode == GameMode.SinglePlayerAI ||
-             GameModeManager.Instance.Mode == GameMode.CoopAI))
-        {
-            while (!AreAllPlayersDead() && m_CurrentScore < m_TargetScore)
-                yield return null;
-        }
-        else
-        {
-            while (!OneTankLeft())
-                yield return null;
-        }
-    }
-
-    private IEnumerator RoundEnding()
-    {
-        DisableTankControl();
-        m_RoundWinner = GetRoundWinner();
-        if (m_RoundWinner != null) m_RoundWinner.m_Wins++;
-        m_GameWinner = GetGameWinner();
-
-        if (m_MessageText != null) m_MessageText.text = EndMessage();
-
-        yield return m_EndWait;
     }
 
     private bool OneTankLeft()
     {
         int count = 0;
         foreach (var tank in m_AllTanks)
-        {
-            if (tank != null && tank.m_Instance != null && tank.m_Instance.activeSelf)
-                count++;
-        }
+            if (tank.m_Instance.activeSelf) count++;
         return count <= 1;
     }
 
     private TankManager GetRoundWinner()
     {
         foreach (var tank in m_AllTanks)
-        {
-            if (tank != null && tank.m_Instance != null && tank.m_Instance.activeSelf)
-                return tank;
-        }
+            if (tank.m_Instance.activeSelf) return tank;
         return null;
     }
 
     private TankManager GetGameWinner()
     {
         foreach (var tank in m_AllTanks)
-        {
-            if (tank != null && tank.m_Wins >= m_NumRoundsToWin)
-                return tank;
-        }
+            if (tank.m_Wins >= m_NumRoundsToWin) return tank;
         return null;
-    }
-
-    private string EndMessage()
-    {
-        string message = "DRAW!";
-        if (m_RoundWinner != null)
-            message = m_RoundWinner.m_ColoredPlayerText + " WINS THE ROUND!";
-
-        if (GameModeManager.Instance != null &&
-            (GameModeManager.Instance.Mode == GameMode.SinglePlayerAI ||
-             GameModeManager.Instance.Mode == GameMode.CoopAI))
-        {
-            message = m_CurrentScore >= m_TargetScore ?
-                $"MISSION ACCOMPLISHED!\nSCORE: {m_CurrentScore}" :
-                $"MISSION FAILED!\nSCORE: {m_CurrentScore}";
-        }
-
-        message += "\n\n\n\n";
-
-        foreach (var tank in m_AllTanks)
-        {
-            if (tank != null)
-                message += tank.m_ColoredPlayerText + ": " + tank.m_Wins + " WINS\n";
-        }
-
-        if (m_GameWinner != null)
-            message = m_GameWinner.m_ColoredPlayerText + " WINS THE GAME!";
-
-        return message;
     }
 
     private bool AreAllPlayersDead()
     {
         foreach (var tank in m_Tanks)
-        {
-            if (tank != null && tank.m_Instance != null && tank.m_Instance.activeSelf)
-                return false;
-        }
+            if (tank != null && tank.m_Instance != null && tank.m_Instance.activeSelf) return false;
         return true;
+    }
+
+    private string EndMessage()
+    {
+        string message = "DRAW!";
+        if (m_RoundWinner != null) message = m_RoundWinner.m_ColoredPlayerText + " WINS THE ROUND!";
+        if (m_State == GameState.MatchEnding && m_GameWinner != null) message = m_GameWinner.m_ColoredPlayerText + " WINS THE GAME!";
+        
+        return message;
     }
 
     public void AddScore(int amount)
     {
         m_CurrentScore += amount;
+        UIManager.Instance.UpdateHUD(m_CurrentScore, m_TargetScore);
     }
 
-    private void ResetAllTanks()
-    {
-        foreach (var tank in m_AllTanks)
-        {
-            if (tank != null)
-                tank.Reset();
-        }
-    }
+    public void ResetAllTanks() { foreach (var tank in m_AllTanks) tank.Reset(); }
+    public void EnableTankControl() { foreach (var tank in m_AllTanks) tank.EnableControl(); }
+    public void DisableTankControl() { foreach (var tank in m_AllTanks) tank.DisableControl(); }
 
-    private void EnableTankControl()
+    // This allows EnemySpawner to register AI tanks if needed
+    public TankManager RegisterAdditionalTank(GameObject go, Color color, Transform spawn)
     {
-        foreach (var tank in m_AllTanks)
-        {
-            if (tank != null)
-                tank.EnableControl();
-        }
-    }
-
-    private void DisableTankControl()
-    {
-        foreach (var tank in m_AllTanks)
-        {
-            if (tank != null)
-                tank.DisableControl();
-        }
+        // For simplicity in this demo, we'll just track the score. 
+        // A full implementation would add the AI to m_AllTanks for camera tracking.
+        return null; 
     }
 }
+

@@ -1,0 +1,169 @@
+# ULTIMATE UNITY TANK GAME: STEP-BY-STEP EDITOR SETUP GUIDE
+
+This guide provides the exact mouse clicks and locations required to link the C# logic to your Unity Editor.
+
+---
+
+### STEP 1: PREPARING THE SCENE HIERARCHY
+1.  **Open Gameplay Scene**: Double-click your "Main" or "Game" scene in the **Project Window**.
+2.  **Create the Managers Container**:
+    *   Right-click in the **Hierarchy Window** -> Select **Create Empty**.
+    *   Rename it to `--- MANAGERS ---`.
+    *   With `--- MANAGERS ---` selected, go to the **Inspector Window** -> Click **Add Component**.
+    *   Search and add: `GameManager`, `UIManager`, and `SettingsManager`.
+3.  **Assign Camera**:
+    *   Find your `CameraRig` or `Main Camera` in the Hierarchy.
+    *   Drag it into the **m_CameraControl** slot inside the `GameManager` component in the Inspector.
+
+---
+
+### STEP 2: CREATING THE UI CANVAS
+1.  **Create Canvas**: Right-click in Hierarchy -> **UI** -> **Canvas**. Rename it to `Main_UI_Canvas`.
+2.  **Configure Rendering**:
+    *   Select `Main_UI_Canvas`. In Inspector, find **Canvas Scaler**.
+    *   Change **UI Scale Mode** to `Scale With Screen Size`.
+    *   Set **Reference Resolution** to `1920 x 1080` for a standard layout.
+3.  **Add Event System**: Unity should have automatically added an `EventSystem` GameObject. If not, Right-click Hierarchy -> **UI** -> **Event System**. (Buttons won't work without this!)
+
+---
+
+### STEP 3: CREATING THE 6 UI PANELS (Hierarchy & Purpose)
+These 6 objects act as "folders" for your UI. When the script switches screens, it simply turns these folders ON or OFF.
+
+**How to create:** Right-click `Main_UI_Canvas` -> Create Empty. Add a **UI > Image** as a child if you need a background.
+
+| GameObject Name | Background Image Purpose | Content Purpose |
+| :--- | :--- | :--- |
+| **HUD_Panel** | **Keep Transparent.** (No image needed). | Holds the Score, Wave counter, and "Press ESC" hint. Always visible during play. |
+| **Round_Info_Panel** | **Subtle Horizontal Bar.** Use a narrow black strip (Alpha 100) across the middle. | Displays "ROUND 1", "3...2...1", and "PLAYER 1 WINS". The background helps the white text pop. |
+| **Pause_Menu_Panel** | **Full Screen Dim.** Set Image to Black (Alpha 180). Stretch to fill the whole screen. | Dims the game logic so the player can focus on the "Resume" and "Quit" buttons. |
+| **Settings_Menu_Panel**| **Centered Box.** A clean rectangular frame in the middle of the screen. | Holds the Audio Sliders. Prevents the text from being lost in the game background. |
+| **Match_End_Panel** | **Victory/GameOver Overlay.** A dark blue or solid dark overlay. | Displays the final winner and the "Play Again" button after the match ends. |
+
+---
+
+### STEP 4: BUILDING CONTENT INSIDE PANELS
+Now that you have the folders, add these objects INSIDE them. Type the text exactly as shown under the "Text" property in the Inspector.
+
+1. **Inside HUD_Panel**:
+   * `Score_Text`: Type **"Score: 0 / 15"**. Position: Top-Left.
+   * `Wave_Text`: Type **"Wave: 1"**. Position: Top-Right.
+   * `Pause_Hint`: Type **"Press [ESC] to Pause"**. Position: Bottom-Left.
+
+2. **Inside Round_Info_Panel**:
+   * `Message_Text`: Type **"READY?"** (as a placeholder). Set Font Style to **Bold**, Size to **60**, Color to **White**.
+
+3. **Inside Pause_Menu_Panel**:
+   * `Title_Text`: Type **"GAME PAUSED"**. (Big text at top).
+   * `Btn_Resume` Child Text: Type **"RESUME"**.
+   * `Btn_Settings` Child Text: Type **"SETTINGS"**.
+   * `Btn_Quit` Child Text: Type **"QUIT TO MENU"**.
+
+4. **Inside Settings_Menu_Panel**:
+   * `Title_Text`: Type **"AUDIO SETTINGS"**.
+   * `Master_Label`: Type **"MASTER VOLUME"**.
+   * `Music_Label`: Type **"MUSIC VOLUME"**.
+   * `SFX_Label`: Type **"SFX VOLUME"**.
+   * `Btn_Back` Child Text: Type **"BACK"**.
+
+5. **Inside Match_End_Panel**:
+   * `Winner_Summary_Text`: Type **"GAME OVER"** (as a placeholder).
+   * `Btn_PlayAgain` Child Text: Type **"RESTART MATCH"**.
+   * `Btn_QuitToMenu` Child Text: Type **"MAIN MENU"**.
+
+---
+
+### PRO TIP: SIZING & ANCHORING (Don't use the Scale Tool!)
+In Unity UI, you should almost **never** change the "Scale" property (X, Y, Z) from 1. Instead, use the **Anchor Presets** to size your panels.
+
+1. **For Full-Screen Panels** (`HUD_Panel`, `Pause_Menu_Panel`, `Match_End_Panel`):
+   * Select the Panel. In the **RectTransform**, click the square **Anchor Preset** icon.
+   * Hold **ALT + SHIFT** and click the **Bottom-Right icon (Stretch)**. 
+   * This makes the panel fill the entire screen automatically.
+
+2. **For Centered Menus** (`Settings_Menu_Panel`):
+   * Select the Panel. Click the **Anchor Preset** icon.
+   * Hold **ALT + SHIFT** and click the **Middle icon (Center)**. 
+   * Set the **Width** to `600` and **Height** to `400` (or whatever looks good).
+
+3. **For Text position in HUD**:
+   * `Score_Text`: Anchor to **Top-Left**.
+   * `Wave_Text`: Anchor to **Top-Right**.
+
+---
+
+---
+
+### STEP 5: CONNECTING BUTTONS TO CODE
+Follow this table to link every UI element to its logic. 
+**Process:** Select the Button -> Go to Inspector -> Click **[+]** on the Event -> Drag `--- MANAGERS ---` into the slot -> Select the Function.
+
+| UI Element Name | Object to Drag | Script/Class | Function to Select |
+| :--- | :--- | :--- | :--- |
+| **Btn_Resume** | `--- MANAGERS ---` | `UIManager` | **OnResumeClicked** |
+| **Btn_Quit** | `--- MANAGERS ---` | `UIManager` | **OnQuitToMenuClicked** |
+| **Btn_PlayAgain** (End) | `--- MANAGERS ---` | `UIManager` | **OnRestartClicked** |
+| **Btn_QuitToMenu** (End) | `--- MANAGERS ---` | `UIManager` | **OnQuitToMenuClicked** |
+
+---
+
+### 🛠️ DEBUGGING: "WHY IS IT NOT WORKING?"
+
+If you see a **White Box** or your buttons don't click, follow these 3 fixes:
+
+#### 1. Fix the "White Box" (The Sample Box)
+Unity's default "Panel" comes with a white background image.
+*   **Locate**: Select your `HUD_Panel` or `Pause_Menu_Panel` in the Hierarchy.
+*   **Check Inspector**: Look for a component called **Image**.
+*   **Fix**: Either **Remove** the Image component (Right-click "Image" -> Remove Component) or change its **Alpha** (transparency) to 0. 
+*   *For the Pause Menu, you want the Alpha around 150 for a dim effect, but for the HUD, it should be 0.*
+
+#### 2. Buttons Don't Click? (Missing EventSystem)
+UI buttons require a "brain" to detect mouse clicks.
+*   **Check**: Look in your Hierarchy for an object named **EventSystem**.
+*   **Fix**: If it's missing, Right-click in Hierarchy -> **UI** -> **Event System**.
+
+#### 3. Scene Conflicts (Tutorial Objects)
+If you are working in the `_Complete-Game` scene from the tutorial:
+*   **Check**: There are original tutorial UI objects like `HUDCanvas` or `MessageCanvas`.
+*   **Fix**: Find them in the Hierarchy and **Disable** them (uncheck the box in the Inspector) so they don't block your new UI.
+*   **Sorting**: Ensure your `Main_UI_Canvas` has a **Sort Order** of `10` so it stays on top of everything else.
+
+#### 5. "Unable to Drag" fix (Missing Scripts)
+If you can't drag your GameObjects into the slots, follow these exactly:
+1.  **Remove the "Missing" Component**: In your screenshot, there is a component named **Missing (Mono Script)** on your Manager object. 
+    *   Click the **three dots (⋮)** on that specific component and select **Remove Component**. 
+    *   Unity often blocks drag-and-drops if there is a "broken" script on the same object.
+2.  **Legacy Text vs TextMeshPro**: 
+    *   I have updated `UIManager.cs` to be "Universal." You can now drag **any** UI object (Score_Text, Wave_Text, etc.) into the slots, and it will automatically find the right text component.
+3.  **Ensure Hierarchy is Selected**: Make sure you are dragging from the **Hierarchy Window** (the left list) into the **Inspector Window** (the right list).
+
+---
+
+### STEP 6: LINKING THE INSPECTOR SLOTS
+Final step to make the scripts aware of the UI:
+
+1.  Select `--- MANAGERS ---` in the Hierarchy.
+2.  In the `UIManager` component, you will see empty slots like "Pause Panel", "HUD Panel", etc.
+3.  Drag the corresponding GameObjects from your Hierarchy INTO these slots.
+    *   `HUD_Panel` -> **m_HUDPanel**
+    *   `Pause_Menu_Panel` -> **m_PausePanel**
+    *   `Score_Text` -> **m_ScoreText**
+4.  In the `SettingsManager` component, drag your `MainMixer` file from the Project Window into the **m_MainMixer** slot.
+5.  In the `GameManager` component, drag your Tank Prefab into **m_TankPrefab** and fill the **m_Tanks** array with spawn points.
+
+---
+
+### STEP 7: BUILD SETTINGS CHECK
+1.  Top Menu: **File** -> **Build Settings**.
+2.  Drag your `MainMenu` scene in first (Top of the list, index 0).
+3.  Drag your `Main` gameplay scene in second (Index 1).
+
+---
+
+### TESTING PROCEDURE
+1.  Press **Play**.
+2.  Wait for the "ROUND 1" message to disappear.
+3.  Press **Esc**. The Pause Menu should appear.
+4.  Move the **Master Slider**. Check the **Audio Mixer** window to see the "Master" group's slider moving.
+5.  Click **Quit**. It should return you to the Main Menu.
